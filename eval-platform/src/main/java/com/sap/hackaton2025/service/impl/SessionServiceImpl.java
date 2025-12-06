@@ -374,20 +374,20 @@ public class SessionServiceImpl implements SessionService {
 				var fulfilmentTime = ReferenceHour.addHours(day, hour, KitType.B_BUSINESS.replacementLeadTimeHours());
 				kitMovements.accept(buildKitMovementForOrder(fulfilmentTime.day(), fulfilmentTime.hour(),
 						kitPurchasingOrders.business(), KitMovement::setBusinessKits, evaluationSession));
-				operationalCost += KitType.B_BUSINESS.cost() * kitPurchasingOrders.first();
+				operationalCost += KitType.B_BUSINESS.cost() * kitPurchasingOrders.business();
 			}
 			if (kitPurchasingOrders.premiumEconomy() > 0) {
 				var fulfilmentTime = ReferenceHour.addHours(day, hour,
 						KitType.C_PREMIUM_ECONOMY.replacementLeadTimeHours());
 				kitMovements.accept(buildKitMovementForOrder(fulfilmentTime.day(), fulfilmentTime.hour(),
 						kitPurchasingOrders.premiumEconomy(), KitMovement::setPremiumEconomyKits, evaluationSession));
-				operationalCost += KitType.C_PREMIUM_ECONOMY.cost() * kitPurchasingOrders.first();
+				operationalCost += KitType.C_PREMIUM_ECONOMY.cost() * kitPurchasingOrders.premiumEconomy();
 			}
 			if (kitPurchasingOrders.economy() > 0) {
 				var fulfilmentTime = ReferenceHour.addHours(day, hour, KitType.D_ECONOMY.replacementLeadTimeHours());
 				kitMovements.accept(buildKitMovementForOrder(fulfilmentTime.day(), fulfilmentTime.hour(),
 						kitPurchasingOrders.economy(), KitMovement::setEconomyKits, evaluationSession));
-				operationalCost += KitType.D_ECONOMY.cost() * kitPurchasingOrders.first();
+				operationalCost += KitType.D_ECONOMY.cost() * kitPurchasingOrders.economy();
 			}
 		}
 		return operationalCost;
