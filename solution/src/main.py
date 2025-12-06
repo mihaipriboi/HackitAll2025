@@ -2,6 +2,7 @@ import os
 import sys
 import subprocess
 import time
+import numpy as np
 import pandas as pd
 from datetime import datetime
 
@@ -30,6 +31,16 @@ from api_client import ApiClient
 from strategy import Strategy
 from gui import LogisticsDashboard
 
+RL_AVAILABLE = False
+try:
+    from stable_baselines3 import PPO
+    RL_AVAILABLE = True
+    print("🔍 DEBUG: Reinforcement Learning libraries found.", flush=True)
+except ImportError:
+    print("⚠️ WARNING: Stable Baselines3 not found. Running in Heuristic Mode.", flush=True)
+except Exception as e:
+    print(f"⚠️ WARNING: Error importing RL libraries: {e}", flush=True)
+
 MAX_LOG_HISTORY = 5000  # Enough for full 30-day simulation history
 
 def get_api_key():
@@ -41,7 +52,7 @@ def get_api_key():
     return "TEST_KEY"
 
 # --- HTML LOG GENERATOR ---
-def add_log_entry(day, hour, cost, penalties, departing_flights, loads):
+def add_log_entry(day, hour, cost, penalties, departing_flights, loads, ai_params=None):
     """
     Creates a robust HTML block for the current hour.
     """
@@ -97,6 +108,13 @@ def add_log_entry(day, hour, cost, penalties, departing_flights, loads):
             
     html += """</div></div>""" # Close body and entry divs
     
+    # 4. AI Params
+    if ai_params is not None:
+        buf, buy, end = ai_params
+        end_icon = "🏁" if end > 0.5 else "🟢"
+        ai_str = f" | 🤖 AI: Buf={buf:.2f} Buy={buy:.1f}d {end_icon}"
+        html += f"""<div class="dim" style="font-size:0.9em">{ai_str}</div>"""
+
     st.session_state.logs.insert(0, html)
     if len(st.session_state.logs) > MAX_LOG_HISTORY:
         st.session_state.logs.pop()
@@ -152,6 +170,8 @@ def main_app():
         st.session_state.cost_history = []
         st.session_state.penalty_count = 0
         st.session_state.last_view_data = None
+        st.session_state.rl_mode = None
+
 
     dashboard = LogisticsDashboard()
     
@@ -180,11 +200,25 @@ def main_app():
                 'airports_df': prepare_airport_data(st.session_state.world)
             }
             dashboard.render_update(empty_data)
+    
+    if st.session_state.rl_model == None:
+        model_path = "rotables_ppo_model.zip"
+        if RL_AVAILABLE and os.path.exists(model_path):
+            print(f"🧠 AI Model found ({model_path}). Loading Brain...", flush=True)
+            try:
+                st.session_state.rl_model = PPO.load("rotables_ppo_model")
+                print("✅ AI Brain loaded successfully!", flush=True)
+            except Exception as e:
+                print(f"⚠️ Failed to load AI model: {e}. Running heuristics.", flush=True)
+        else:
+            print("ℹ️ Running in Algorithmic Mode (No RL model found).", flush=True)
+
 
 def run_simulation(dashboard):
     client = st.session_state.client
     brain = st.session_state.brain
     world = st.session_state.world
+    rl_model = st.session_state.rl_model
     
     st.session_state.logs.insert(0, "<div class='log-entry'>🔌 Connecting...</div>")
     client.stop_session()
@@ -204,6 +238,20 @@ def run_simulation(dashboard):
     
     try:
         while (current_day * 24 + current_hour) < TOTAL_GAME_HOURS:
+            # --- AI DECISION ---
+            current_ai_params = None
+            if rl_model:
+                # Observație simplificată pentru AI
+                time_norm = 1.0 - ((current_day * 24 + current_hour) / TOTAL_GAME_HOURS)
+                hub_total = sum(brain.get_real_stock(brain.hub_code, c) for c in brain.classes)
+                hub_norm = min(1.0, hub_total / 20000.0)
+                obs = np.array([time_norm, hub_norm, 0.5], dtype=np.float32)
+                
+                # Predicție
+                action, _ = rl_model.predict(obs)
+                brain.set_ai_params(action[0], action[1], action[2])
+                current_ai_params = action
+            
             # Logic
             loads = brain.decide_kit_loads(current_day, current_hour)
             orders = brain.decide_purchases(current_day, current_hour)
@@ -227,7 +275,7 @@ def run_simulation(dashboard):
                     st.session_state.penalty_count += len(resp['penalties'])
 
                 # Log
-                add_log_entry(current_day, current_hour, hour_cost, resp.get('penalties', []), departing_now, loads)
+                add_log_entry(current_day, current_hour, hour_cost, resp.get('penalties', []), departing_now, loads, current_ai_params)
 
                 st.session_state.cost_history.append({
                     'time': current_day * 24 + current_hour,
