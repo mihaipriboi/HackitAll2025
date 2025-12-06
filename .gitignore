@@ -25,3 +25,4 @@ replay_pid*
 
 # Ignore virutual environment folders
 venv/
+__pycache__
