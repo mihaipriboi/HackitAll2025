@@ -17,6 +17,14 @@ project_root/
 
 ## Setup & Installation
 
+### Run the eval-platform (if tested locally)
+```bash
+cd eval-platform
+mvn spring-boot:run -Dspring-boot.run.profiles=local
+```
+
+### Run the Solution
+
 Open your terminal in the `solution` directory.
 
 ### 1. Create the Virtual Environment
