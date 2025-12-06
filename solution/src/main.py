@@ -105,15 +105,16 @@ def add_log_entry(day, hour, cost, penalties, departing_flights, loads):
     if len(st.session_state.logs) > MAX_LOG_HISTORY:
         st.session_state.logs.pop()
 
-def prepare_airport_data(world):
+def prepare_airport_data(world, inventory=None):
     """
     Prepares DataFrame with Stock AND Capacity for styling logic.
     """
     data = []
+    stock_map = inventory if inventory is not None else {code: ap.stock for code, ap in world.airports.items()}
     for code, ap in world.airports.items():
         if code == 'HUB1': continue
         
-        s = ap.stock
+        s = stock_map.get(code, ap.stock)
         c = ap.capacity
         
         # Determine Status
@@ -178,10 +179,10 @@ def main_app():
             hub = st.session_state.world.airports['HUB1']
             empty_data = {
                 'day': 0, 'hour': 0, 'total_cost': 0.0, 'penalty_count': 0,
-                'hub_stock': hub.stock,
+                'hub_stock': st.session_state.brain.inventory.get('HUB1', hub.stock),
                 'cost_history': pd.DataFrame(),
                 'logs': [],
-                'airports_df': prepare_airport_data(st.session_state.world)
+                'airports_df': prepare_airport_data(st.session_state.world, st.session_state.brain.inventory)
             }
             dashboard.render_update(empty_data)
 
@@ -244,10 +245,10 @@ def run_simulation(dashboard):
                     'hour': current_hour,
                     'total_cost': total_cost,
                     'penalty_count': st.session_state.penalty_count,
-                    'hub_stock': world.airports['HUB1'].stock,
+                    'hub_stock': st.session_state.brain.inventory.get('HUB1', world.airports['HUB1'].stock),
                     'cost_history': pd.DataFrame(st.session_state.cost_history),
                     'logs': st.session_state.logs,
-                    'airports_df': prepare_airport_data(world)
+                    'airports_df': prepare_airport_data(world, st.session_state.brain.inventory)
                 }
                 st.session_state.last_view_data = view_data
                 
