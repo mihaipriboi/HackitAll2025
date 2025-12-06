@@ -63,7 +63,7 @@ class Strategy:
             "FIRST": 48,
             "BUSINESS": 36,
             "PREMIUM_ECONOMY": 24,
-            "ECONOMY": 18,
+            "ECONOMY": 15,
         }
         self.purchase_buffer = {
             "FIRST": 0.1,
@@ -75,7 +75,13 @@ class Strategy:
             "FIRST": 20,
             "BUSINESS": 40,
             "PREMIUM_ECONOMY": 40,
-            "ECONOMY": 30,
+            "ECONOMY": 15,
+        }
+        self.hysteresis_lower = {
+            "FIRST": 0.9,
+            "BUSINESS": 0.9,
+            "PREMIUM_ECONOMY": 0.9,
+            "ECONOMY": 0.8,
         }
 
     def update_state(self, current_day, current_hour, api_response):
@@ -157,7 +163,10 @@ class Strategy:
                 window_hours = 36
                 dest_future_need = self._future_demand_for_airport(info.destination, arrival_time, window_hours)
 
-                for cls in CLASS_ORDER:
+                # Prioritize classes to reduce expensive penalties: First -> Business -> Premium -> Economy
+                priority_classes = ["FIRST", "BUSINESS", "PREMIUM_ECONOMY", "ECONOMY"]
+
+                for cls in priority_classes:
                     pax_now = info.passengers.get(cls, 0)
                     cap = aircraft.kit_capacity.get(cls, 0)
                     hub_stock = origin_inv.get(cls, 0)
@@ -179,7 +188,7 @@ class Strategy:
                     # 3. Destination Capacity
                     # 4. Pax Demand (The new strict cap)
                     qty = min(cap, hub_stock, dest_remaining_cap, calculated_need, pax_now)
-                    
+
                     load_per_class[cls] = qty
                     origin_inv[cls] = hub_stock - qty
             else:
@@ -252,7 +261,12 @@ class Strategy:
             projected = hub_stock.get(cls, 0) + incoming.get(cls, 0)
             target = int(demand.get(cls, 0) * (1 + buffer)) + cap_extra
 
-            if projected >= target:
+            # Hysteresis: if above upper target, skip; if below lower, allow purchase
+            upper = target
+            lower = int(target * self.hysteresis_lower[cls])
+            if projected >= upper:
+                continue
+            if projected >= lower:
                 continue
 
             shortfall = target - projected
