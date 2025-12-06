@@ -53,14 +53,12 @@ class Strategy:
     def update_state(self, current_day, current_hour, api_response):
         """
         Ingests the 'flightUpdates' from the API.
-        This is where we find out about new flights and their UUIDs.
         """
         if not api_response or 'flightUpdates' not in api_response:
             return
 
         for event in api_response['flightUpdates']:
-            # We look for SCHEDULED events to know about future flights.
-            # These usually arrive ~24h before departure.
+            # Handle both SCHEDULED and CHECKED_IN to ensure we have the latest passenger data (demand 1h ago)
             if event['eventType'] in ('SCHEDULED', 'CHECKED_IN'):
                 f_id = event['flightId']
 
@@ -95,6 +93,7 @@ class Strategy:
     def decide_kit_loads(self, current_day, current_hour):
         """
         Decide loads for flights departing now, based on tracked inventory.
+        Capped at actual passenger demand (from 1h ago).
         """
         self._release_completed_processing(current_day, current_hour)
 
@@ -117,7 +116,7 @@ class Strategy:
             load_per_class: Dict[str, int] = {}
 
             if info.origin == "HUB1":
-                # Plan shipments based on known demand at destination in next 36h
+                # Plan shipments based on known demand, BUT CAP AT CURRENT PASSENGERS
                 dest_airport = self.world.airports.get(info.destination)
                 dest_inv = self.inventory.get(info.destination, {cls: 0 for cls in CLASS_ORDER})
                 dest_cap = dest_airport.capacity if dest_airport else {cls: 0 for cls in CLASS_ORDER}
@@ -130,14 +129,28 @@ class Strategy:
                     cap = aircraft.kit_capacity.get(cls, 0)
                     hub_stock = origin_inv.get(cls, 0)
                     dest_stock = dest_inv.get(cls, 0)
+                    
                     need = dest_future_need.get(cls, 0)
                     dest_remaining_cap = max(0, dest_cap.get(cls, 0) - dest_stock)
-                    desired = min(dest_remaining_cap, pax_now + max(0, need - dest_stock))
-                    qty = min(cap, hub_stock, desired)
+                    
+                    # Original logic calculated desired extra:
+                    # desired = min(dest_remaining_cap, pax_now + max(0, need - dest_stock))
+                    
+                    # NEW LOGIC: We calculate desired buffer, but strictly cap at pax_now
+                    # This ensures we never load more than the demand 1h ago.
+                    calculated_need = pax_now + max(0, need - dest_stock)
+                    
+                    # Apply constraints: 
+                    # 1. Aircraft Capacity
+                    # 2. Hub Stock
+                    # 3. Destination Capacity
+                    # 4. Pax Demand (The new strict cap)
+                    qty = min(cap, hub_stock, dest_remaining_cap, calculated_need, pax_now)
+                    
                     load_per_class[cls] = qty
                     origin_inv[cls] = hub_stock - qty
             else:
-                # Outstation: load passengers only, prioritize higher classes via loop order
+                # Outstation: load passengers only (already capped by definition)
                 for cls in CLASS_ORDER:
                     pax = info.passengers.get(cls, 0)
                     cap = aircraft.kit_capacity.get(cls, 0)
