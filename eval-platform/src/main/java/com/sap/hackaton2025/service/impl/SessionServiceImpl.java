@@ -674,7 +674,13 @@ public class SessionServiceImpl implements SessionService {
 
 		var upcomingFlights = flightService.getUpcomingFlights(evaluationSession.getCurrentDay(),
 				evaluationSession.getCurrentHour());
+		var eogHour = ReferenceHour.addHours(0, 0, numberOfHours - 1);
 		upcomingFlights.forEach(flight -> {
+			if (flight.getActualArrivalDay() > eogHour.day() || (flight.getActualArrivalDay() == eogHour.day()
+					&& flight.getActualArrivalDay() > eogHour.hour())) {
+				// flight arrives after end of game, skip
+				return;
+			}
 			penalties.add(createPenalty(evaluationSession, "END_OF_GAME_UNFULFILLED_FLIGHT_KITS", flight,
 					evaluationSession.getCurrentDay(), evaluationSession.getCurrentHour(),
 					"End of game penalty for unfulfilled kits on flight " + flight.getFlightNumber(),
