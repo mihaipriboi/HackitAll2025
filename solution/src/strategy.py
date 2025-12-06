@@ -63,7 +63,7 @@ class Strategy:
             "FIRST": 48,
             "BUSINESS": 36,
             "PREMIUM_ECONOMY": 24,
-            "ECONOMY": 15,
+            "ECONOMY": 12,
         }
         self.purchase_buffer = {
             "FIRST": 0.1,
@@ -75,13 +75,13 @@ class Strategy:
             "FIRST": 20,
             "BUSINESS": 40,
             "PREMIUM_ECONOMY": 40,
-            "ECONOMY": 15,
+            "ECONOMY": 8,
         }
         self.hysteresis_lower = {
             "FIRST": 0.9,
             "BUSINESS": 0.9,
             "PREMIUM_ECONOMY": 0.9,
-            "ECONOMY": 0.8,
+            "ECONOMY": 0.6,
         }
 
     def update_state(self, current_day, current_hour, api_response):
@@ -165,7 +165,6 @@ class Strategy:
 
                 # Prioritize classes to reduce expensive penalties: First -> Business -> Premium -> Economy
                 priority_classes = ["FIRST", "BUSINESS", "PREMIUM_ECONOMY", "ECONOMY"]
-
                 for cls in priority_classes:
                     pax_now = info.passengers.get(cls, 0)
                     cap = aircraft.kit_capacity.get(cls, 0)
@@ -193,13 +192,23 @@ class Strategy:
                     origin_inv[cls] = hub_stock - qty
             else:
                 # Outstation: load passengers only (already capped by definition)
+                # Leave a small safety buffer if a return flight exists soon, to avoid negative stock on delays.
+                safety_economy = 12
+                safety_premium = 6
                 for cls in CLASS_ORDER:
                     pax = info.passengers.get(cls, 0)
                     cap = aircraft.kit_capacity.get(cls, 0)
                     available = origin_inv.get(cls, 0)
-                    qty = min(pax, cap, max(0, available))
-                    load_per_class[cls] = qty
-                    origin_inv[cls] = available - qty
+
+                    reserve = 0
+                    if cls == "ECONOMY":
+                        reserve = safety_economy
+                    elif cls == "PREMIUM_ECONOMY":
+                        reserve = safety_premium
+
+                    qty = min(pax, cap, max(0, available - reserve))
+                    load_per_class[cls] = max(0, qty)
+                    origin_inv[cls] = available - load_per_class[cls]
 
             # Schedule processed kits to return at destination after processing time
             dest = self.world.airports.get(info.destination)
@@ -273,6 +282,8 @@ class Strategy:
 
             # Do not place orders that would arrive after game ends
             if current_int + lead >= game_end_int:
+                continue
+            if cls == "ECONOMY" and (game_end_int - current_int) < 18:
                 continue
 
             # Respect airport capacity
