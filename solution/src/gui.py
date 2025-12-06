@@ -98,6 +98,9 @@ class LogisticsDashboard:
 
             with col2:
                 st.metric("Penalties", f"{state_data['penalty_count']}", delta_color="inverse")
+                # average cost per hour
+                avg_cost = state_data['total_cost'] / max(1, (state_data['day'] * 24 + state_data['hour']))
+                st.metric("Avg Cost/Hour", f"${avg_cost:,.0f}")
 
             with col3:
                 st.metric("Hub First Stock", f"{state_data['hub_stock']['FIRST']:,}")
