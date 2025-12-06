@@ -12,6 +12,7 @@ public record FlightEvent(@Schema(description = "The type of flight event", null
 		@Schema(description = "The departure time", nullable = false) ReferenceHour departure,
 		@Schema(description = "The arrival time", nullable = false) ReferenceHour arrival,
 		@Schema(description = "The number of passengers per class", nullable = false) PerClassAmount passengers,
-		@Schema(description = "The code of the type of aircraft", nullable = false) String aircraftType) {
+		@Schema(description = "The code of the type of aircraft", nullable = false) String aircraftType,
+		@Schema(description = "The flight distance", nullable = false) double distance) {
 
 }

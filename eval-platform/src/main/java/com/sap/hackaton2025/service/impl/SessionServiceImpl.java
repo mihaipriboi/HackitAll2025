@@ -714,7 +714,7 @@ public class SessionServiceImpl implements SessionService {
 				new ReferenceHour(flight.getScheduledArrivalDay(), flight.getScheduledArrivalHour()),
 				new PerClassAmount(flight.getPlannedFirstPassengers(), flight.getPlannedBusinessPassengers(),
 						flight.getPlannedPremiumEconomyPassengers(), flight.getPlannedEconomyPassengers()),
-				flight.getScheduledAircraftType().getTypeName());
+				flight.getScheduledAircraftType().getTypeName(), flight.getDistance());
 	}
 
 	private FlightEvent toCheckedInFlight(Flight flight) {
@@ -724,7 +724,7 @@ public class SessionServiceImpl implements SessionService {
 				new ReferenceHour(flight.getScheduledArrivalDay(), flight.getScheduledArrivalHour()),
 				new PerClassAmount(flight.getActualFirstPassengers(), flight.getActualBusinessPassengers(),
 						flight.getActualPremiumEconomyPassengers(), flight.getActualEconomyPassengers()),
-				flight.getActualAircraftType().getTypeName());
+				flight.getActualAircraftType().getTypeName(), flight.getDistance());
 	}
 
 	private FlightEvent toLandedFlight(Flight flight) {
@@ -734,7 +734,7 @@ public class SessionServiceImpl implements SessionService {
 				new ReferenceHour(flight.getActualArrivalDay(), flight.getActualArrivalHour()),
 				new PerClassAmount(flight.getActualFirstPassengers(), flight.getActualBusinessPassengers(),
 						flight.getActualPremiumEconomyPassengers(), flight.getActualEconomyPassengers()),
-				flight.getActualAircraftType().getTypeName());
+				flight.getActualAircraftType().getTypeName(), flight.getActualDistance());
 	}
 
 	private static FlightLoad toFlightLoad(FlightLoadDto dto, EvaluationSession session) {
