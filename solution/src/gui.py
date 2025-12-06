@@ -90,11 +90,22 @@ class LogisticsDashboard:
     def render_update(self, state_data):
         # 1. KPIs
         with self.kpi_container.container():
-            k1, k2, k3, k4 = st.columns(4)
-            k1.metric("Simulation Time", f"Day {state_data['day']} : {state_data['hour']:02d}")
-            k2.metric("Total Cost", f"${state_data['total_cost']:,.0f}")
-            k3.metric("Penalties", f"{state_data['penalty_count']}", delta_color="inverse")
-            k4.metric("Hub Eco Stock", f"{state_data['hub_stock']['ECONOMY']:,}")
+            col1, col2, col3, col4 = st.columns(4)
+
+            with col1:
+                st.metric("Simulation Time", f"Day {state_data['day']} : {state_data['hour']:02d}")
+                st.metric("Total Cost", f"${state_data['total_cost']:,.0f}")
+
+            with col2:
+                st.metric("Penalties", f"{state_data['penalty_count']}", delta_color="inverse")
+
+            with col3:
+                st.metric("Hub First Stock", f"{state_data['hub_stock']['FIRST']:,}")
+                st.metric("Hub Biz Stock", f"{state_data['hub_stock']['BUSINESS']:,}")
+
+            with col4:
+                st.metric("Hub PE Stock", f"{state_data['hub_stock']['PREMIUM_ECONOMY']:,}")
+                st.metric("Hub Eco Stock", f"{state_data['hub_stock']['ECONOMY']:,}")
 
         # 2. Chart
         with self.charts_container.container():

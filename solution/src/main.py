@@ -60,9 +60,10 @@ def add_log_entry(day, hour, cost, penalties, departing_flights, loads):
     # 2. Penalties (if any)
     if penalties:
         # Show first penalty detail, count rest
-        first_pen = penalties[0]
-        reason = first_pen.get('reason', 'Unknown reason')
-        html += f"""<div class="log-err">⚠️ {len(penalties)} Penalties: {reason} ...</div>"""
+        html += f"""<div class="log-err">⚠️ {len(penalties)} Penalties:</div>"""
+        for pen in penalties:
+            reason = pen.get('reason', 'Unknown reason')
+            html += f"""<div class="log-err">⚠️ {reason}</div>"""
 
     # 3. Departing Flights
     if departing_flights:
@@ -79,7 +80,10 @@ def add_log_entry(day, hour, cost, penalties, departing_flights, loads):
             
             # Helper to format "Load/Pax"
             def fmt(l, p):
-                color = "#FF4B4B" if l < p else "#888" # Red if understocked
+                color = "#FF4B4B" if l < p / 2 else "#888" # Red if less than half
+                color = "#FFFF00" if l < p else color      # Yellow if less than full
+                color = "#00FF00" if l == p else color     # Green if full
+                color = "#FF00FF" if l > p else color      # Purple if overloaded
                 return f"<span style='color:{color}'>{l}/{p}</span>"
             
             f_str = fmt(load['first'], pax['first'])
