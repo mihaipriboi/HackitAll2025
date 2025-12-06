@@ -16,4 +16,5 @@ FILE_SCHEDULE = 'flight_plan.csv'
 FILE_TEAMS = 'teams.csv'
 
 # Simulation Settings
-LOOP_SLEEP_SECONDS = 0.01  # Time to wait between "hours"
+# 0.05 is fast but readable. 0.01 is blur.
+LOOP_SLEEP_SECONDS = 0.05  # Time to wait between "hours"

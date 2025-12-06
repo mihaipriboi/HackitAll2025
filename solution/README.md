@@ -39,7 +39,7 @@ source venv/bin/activate
 
 ### 3. Install Dependencies
 ```bash
-pip install pandas requests
+pip install pandas requests streamlit
 ```
 
 ## How to Run
