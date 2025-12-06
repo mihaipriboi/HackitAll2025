@@ -17,33 +17,27 @@ class ApiClient:
             "Accept": "application/json"
         })
         self.session_id = None
+        self.timeout = 5 # Seconds
 
     def start_session(self) -> bool:
         """
         Starts the game session and captures the SESSION-ID.
-        If a session exists (409 Conflict), it stops the old one and starts a new one.
         """
-        # UPDATED: Added /v1 prefix
         url = f"{self.base_url}/api/v1/session/start"
         
         try:
-            response = self.session.post(url)
+            # Added timeout
+            response = self.session.post(url, timeout=self.timeout)
             
-            # --- HANDLE 409 CONFLICT (Session already active) ---
+            # --- HANDLE 409 CONFLICT ---
             if response.status_code == 409:
                 logger.warning("⚠️ Active session found (409). Restarting session...")
-                
-                # Kill the old one
                 self.stop_session() 
-                
-                # Retry starting
                 try:
-                    response = self.session.post(url)
+                    response = self.session.post(url, timeout=self.timeout)
                     response.raise_for_status()
                 except Exception as retry_e:
                     logger.error(f"❌ Failed to restart session: {retry_e}")
-                    if hasattr(retry_e, 'response') and retry_e.response:
-                         logger.error(f"Server response: {retry_e.response.text}")
                     return False
 
             response.raise_for_status()
@@ -55,12 +49,14 @@ class ApiClient:
                 logger.error("❌ Server returned empty Session ID!")
                 return False
                 
-            # Add to headers for all future requests
             self.session.headers.update({"SESSION-ID": self.session_id})
-            
             logger.info(f"✅ Session started successfully. ID: {self.session_id}")
             return True
             
+        except requests.exceptions.ConnectionError:
+            logger.error(f"❌ Connection Refused: Could not connect to {self.base_url}")
+            logger.error("   -> Is the Java Server running?")
+            return False
         except requests.exceptions.RequestException as e:
             logger.error(f"❌ Failed to start session: {e}")
             if e.response is not None:
@@ -70,12 +66,10 @@ class ApiClient:
     def play_round(self, day: int, hour: int, 
                    flight_loads: List[Dict], 
                    kit_orders: Dict[str, int] = None) -> Optional[Dict]:
-        """
-        Submits decisions for the current hour.
-        """
+        """Submits decisions for the current hour."""
         
         if not self.session_id:
-            logger.error("❌ Cannot play round: No Session ID (Start session first)")
+            logger.error("❌ Cannot play round: No Session ID")
             return None
 
         if kit_orders is None:
@@ -88,11 +82,11 @@ class ApiClient:
             "kitPurchasingOrders": kit_orders
         }
 
-        # UPDATED: Added /v1 prefix
         url = f"{self.base_url}/api/v1/play/round"
         
         try:
-            response = self.session.post(url, json=payload)
+            # Added timeout
+            response = self.session.post(url, json=payload, timeout=self.timeout)
             
             if response.status_code == 400:
                 logger.error(f"⚠️ Validation Error (400) at Day {day} Hour {hour}: {response.text}")
@@ -108,12 +102,15 @@ class ApiClient:
     def stop_session(self):
         """Stops the session."""
         try:
-            # UPDATED: Added /v1 prefix and changed 'stop' to 'end'
             url = f"{self.base_url}/api/v1/session/end"
-            self.session.post(url)
+            # Added timeout so it doesn't hang if server is down
+            self.session.post(url, timeout=2) 
             logger.warning("🛑 Session stopped.")
-        except:
-            pass
+        except requests.exceptions.ConnectionError:
+            # We don't crash here, but we warn the user
+            logger.warning("⚠️ Could not stop session: Server unreachable.")
+        except Exception as e:
+            logger.warning(f"⚠️ Error stopping session: {e}")
 
 # --- Helper Functions ---
 

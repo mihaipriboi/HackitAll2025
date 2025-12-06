@@ -40,9 +40,12 @@ def main():
 
     # --- WRAPPER FOR CLEANUP ---
     try:
+        print(f"🔌 Connecting to server at {client.base_url}...")
+
         # START SESSION
+        # (We rely on start_session internal logic to handle conflicts if necessary)
         if not client.start_session():
-            print("❌ Could not start session. Exiting.")
+            print("❌ Could not start session. Check if server is running.")
             sys.exit(1)
 
         # 4. Game Loop
