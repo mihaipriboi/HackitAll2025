@@ -1,7 +1,8 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from api_client import create_flight_load, create_per_class_amount
+from config import TOTAL_GAME_HOURS
 
 CLASS_ORDER = ["FIRST", "BUSINESS", "PREMIUM_ECONOMY", "ECONOMY"]
 EVENT_CLASS_KEYS = {
@@ -29,6 +30,7 @@ class ProcessingJob:
     airport: str
     kit_class: str
     quantity: int
+    flight_id: Optional[str] = None
 
 
 class Strategy:
@@ -50,6 +52,32 @@ class Strategy:
         }
         self.processing_queue: List[ProcessingJob] = []
 
+        # Purchase tuning
+        self.lead_times = {
+            "FIRST": 48,
+            "BUSINESS": 36,
+            "PREMIUM_ECONOMY": 24,
+            "ECONOMY": 12,
+        }
+        self.purchase_horizon = {
+            "FIRST": 48,
+            "BUSINESS": 36,
+            "PREMIUM_ECONOMY": 24,
+            "ECONOMY": 18,
+        }
+        self.purchase_buffer = {
+            "FIRST": 0.1,
+            "BUSINESS": 0.1,
+            "PREMIUM_ECONOMY": 0.05,
+            "ECONOMY": 0.0,
+        }
+        self.purchase_cap_extra = {
+            "FIRST": 20,
+            "BUSINESS": 40,
+            "PREMIUM_ECONOMY": 40,
+            "ECONOMY": 30,
+        }
+
     def update_state(self, current_day, current_hour, api_response):
         """
         Ingests the 'flightUpdates' from the API.
@@ -70,6 +98,7 @@ class Strategy:
                 passengers = event.get('passengers', {}) or {}
                 aircraft_type = event.get('aircraftType')
 
+                previous = self.flights.get(f_id)
                 info = FlightInfo(
                     flight_id=f_id,
                     origin=event['originAirport'],
@@ -89,6 +118,10 @@ class Strategy:
                 self.flights[f_id] = info
                 if f_id not in self.departures[(dep_day, dep_hour)]:
                     self.departures[(dep_day, dep_hour)].append(f_id)
+
+                # If arrival time changed, reschedule pending processing for this flight
+                if previous and previous.arrival != info.arrival and previous.destination == info.destination:
+                    self._reschedule_processing_for_flight(f_id, info.arrival, info.destination)
 
     def decide_kit_loads(self, current_day, current_hour):
         """
@@ -174,6 +207,7 @@ class Strategy:
                             airport=info.destination,
                             kit_class=cls,
                             quantity=qty,
+                            flight_id=flight_id,
                         )
                     )
 
@@ -200,22 +234,37 @@ class Strategy:
         if not hub:
             return create_per_class_amount(0, 0, 0, 0)
 
-        horizon = 48  # hours ahead
-        demand = self._future_demand_from_hub((current_day, current_hour), horizon)
-        incoming = self._incoming_kits("HUB1", (current_day, current_hour), horizon)
+        current_int = self._time_to_int((current_day, current_hour))
+        game_end_int = TOTAL_GAME_HOURS
 
         orders = {cls: 0 for cls in CLASS_ORDER}
-        for cls in CLASS_ORDER:
-            projected = hub_stock.get(cls, 0) + incoming.get(cls, 0)
-            needed = int(demand.get(cls, 0) * 1.05)  # small buffer
-            if projected < needed:
-                shortfall = needed - projected
-                # keep under capacity
-                orders[cls] = min(shortfall, max(0, hub.capacity[cls] - hub_stock.get(cls, 0)))
-            else:
-                orders[cls] = 0
 
-        # Apply purchase to inventory as soon as it will arrive
+        for cls in CLASS_ORDER:
+            horizon = self.purchase_horizon[cls]
+            buffer = self.purchase_buffer[cls]
+            cap_extra = self.purchase_cap_extra[cls]
+            lead = self.lead_times[cls]
+
+            horizon_int = min(current_int + horizon, game_end_int)
+            demand = self._future_demand_from_hub((current_day, current_hour), horizon, cls_filter=cls)
+            incoming = self._incoming_kits("HUB1", (current_day, current_hour), horizon, cls_filter=cls)
+
+            projected = hub_stock.get(cls, 0) + incoming.get(cls, 0)
+            target = int(demand.get(cls, 0) * (1 + buffer)) + cap_extra
+
+            if projected >= target:
+                continue
+
+            shortfall = target - projected
+
+            # Do not place orders that would arrive after game ends
+            if current_int + lead >= game_end_int:
+                continue
+
+            # Respect airport capacity
+            capacity_left = max(0, hub.capacity[cls] - (hub_stock.get(cls, 0) + incoming.get(cls, 0)))
+            orders[cls] = min(shortfall, capacity_left)
+
         if any(v > 0 for v in orders.values()):
             self._schedule_purchase_delivery(current_day, current_hour, orders)
 
@@ -246,16 +295,10 @@ class Strategy:
         """
         Add purchase arrivals into processing queue (fulfilled at HUB).
         """
-        lead_times = {
-            "FIRST": 48,
-            "BUSINESS": 36,
-            "PREMIUM_ECONOMY": 24,
-            "ECONOMY": 12,
-        }
         for cls, qty in orders.items():
             if qty <= 0:
                 continue
-            ready_day, ready_hour = self._add_hours((current_day, current_hour), lead_times[cls])
+            ready_day, ready_hour = self._add_hours((current_day, current_hour), self.lead_times[cls])
             self.processing_queue.append(
                 ProcessingJob(
                     ready_time=(ready_day, ready_hour),
@@ -281,7 +324,7 @@ class Strategy:
                     demand[cls] += f.passengers.get(cls, 0)
         return demand
 
-    def _future_demand_from_hub(self, current_time: Tuple[int, int], window_hours: int) -> Dict[str, int]:
+    def _future_demand_from_hub(self, current_time: Tuple[int, int], window_hours: int, cls_filter: Optional[str] = None) -> Dict[str, int]:
         """
         Sum passenger demand for flights departing from HUB1 in horizon.
         """
@@ -294,10 +337,12 @@ class Strategy:
             dep_int = self._time_to_int(f.departure)
             if start_int <= dep_int <= end_int:
                 for cls in CLASS_ORDER:
+                    if cls_filter and cls != cls_filter:
+                        continue
                     demand[cls] += f.passengers.get(cls, 0)
         return demand
 
-    def _incoming_kits(self, airport_code: str, current_time: Tuple[int, int], window_hours: int) -> Dict[str, int]:
+    def _incoming_kits(self, airport_code: str, current_time: Tuple[int, int], window_hours: int, cls_filter: Optional[str] = None) -> Dict[str, int]:
         """
         Kits scheduled to arrive (processing queue) at airport within window.
         """
@@ -309,8 +354,25 @@ class Strategy:
                 continue
             t_int = self._time_to_int(job.ready_time)
             if start_int <= t_int <= end_int:
+                if cls_filter and job.kit_class != cls_filter:
+                    continue
                 incoming[job.kit_class] += job.quantity
         return incoming
+
+    def _reschedule_processing_for_flight(self, flight_id: str, new_arrival: Tuple[int, int], destination: str) -> None:
+        """
+        If arrival time changes, push pending kit availability for that flight to the new time.
+        """
+        dest = self.world.airports.get(destination)
+        if not dest:
+            return
+        proc_times = dest.processing_time
+        for job in self.processing_queue:
+            if job.flight_id != flight_id:
+                continue
+            proc_time = proc_times.get(job.kit_class, 0)
+            ready_day, ready_hour = self._add_hours(new_arrival, proc_time)
+            job.ready_time = (ready_day, ready_hour)
 
     @staticmethod
     def _time_to_int(reference: Tuple[int, int]) -> int:
