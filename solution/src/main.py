@@ -102,28 +102,42 @@ def add_log_entry(day, hour, cost, penalties, departing_flights, loads):
         st.session_state.logs.pop()
 
 def prepare_airport_data(world):
+    """
+    Prepares DataFrame with Stock AND Capacity for styling logic.
+    """
     data = []
     for code, ap in world.airports.items():
         if code == 'HUB1': continue
-        s = ap.stock
         
-        # Health Check
-        if s['FIRST']<0 or s['BUSINESS']<0 or s['PREMIUM_ECONOMY']<0 or s['ECONOMY']<0:
-            status = "🔴 CRITICAL"
-        elif s['ECONOMY'] < 20: 
-            status = "🟡 LOW"
-        else:
-            status = "🟢 OK"
+        s = ap.stock
+        c = ap.capacity
+        
+        # Determine Status
+        status = "🟢 OK"
+        if any(s[k] < 0 for k in s): status = "🔴 NEGATIVE"
+        elif any(s[k] > c[k] for k in s): status = "🔴 OVERFLOW"
+        elif s['ECONOMY'] < 20: status = "🟡 LOW"
+        elif c['ECONOMY'] - s['ECONOMY'] < 20: status = "🟡 NEAR CAP"
             
         data.append({
             "Code": code,
-            "FC": s['FIRST'], "BC": s['BUSINESS'], "PE": s['PREMIUM_ECONOMY'], "EC": s['ECONOMY'], 
-            "Status": status
+            "Status": status,
+            # Data Columns (Visible)
+            "FC": s['FIRST'], 
+            "BC": s['BUSINESS'], 
+            "PE": s['PREMIUM_ECONOMY'], 
+            "EC": s['ECONOMY'],
+            # Capacity Columns (Hidden, used for calculation)
+            "Cap_FC": c['FIRST'], 
+            "Cap_BC": c['BUSINESS'], 
+            "Cap_PE": c['PREMIUM_ECONOMY'], 
+            "Cap_EC": c['ECONOMY']
         })
     
     df = pd.DataFrame(data)
     if not df.empty:
-        df = df.sort_values(by="EC", ascending=True)
+        # Sort by Status for visibility
+        df = df.sort_values(by="Status", ascending=True)
     return df
 
 def main_app():

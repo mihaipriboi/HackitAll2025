@@ -112,7 +112,7 @@ class LogisticsDashboard:
                     y=alt.Y('cost:Q', title='Cost'),
                     tooltip=['time', 'cost']
                 ).properties(height=400)
-                st.altair_chart(chart, theme="streamlit", use_container_width=True)
+                st.altair_chart(chart, theme="streamlit", width="stretch")
 
         # 3. Logs (CSS Terminal Style)
         with self.logs_container.container():
@@ -170,18 +170,60 @@ class LogisticsDashboard:
 
         # 4. Table
         if not state_data['airports_df'].empty:
+            df = state_data['airports_df']
+            
+            # --- STYLING LOGIC ---
+            def color_stock(row):
+                # Colors
+                c_green = 'background-color: #1b5e20; color: white'  # Dark Green
+                c_yellow = 'background-color: #f57f17; color: white' # Dark Orange/Yellow
+                c_red = 'background-color: #b71c1c; color: white'    # Dark Red
+                
+                # Output styles list (must match column count)
+                styles = [''] * len(row)
+                
+                try:
+                    # Map visible columns to their capacity columns
+                    # We assume columns are: Code, Status, FC, BC, PE, EC, Cap_FC...
+                    pairs = [
+                        ('FC', 'Cap_FC'), 
+                        ('BC', 'Cap_BC'), 
+                        ('PE', 'Cap_PE'), 
+                        ('EC', 'Cap_EC')
+                    ]
+                    
+                    for stock_col, cap_col in pairs:
+                        idx = df.columns.get_loc(stock_col)
+                        val = row[stock_col]
+                        cap = row[cap_col]
+                        
+                        if val < 0 or val > cap:
+                            styles[idx] = c_red
+                        elif val == cap:
+                            styles[idx] = c_yellow
+                        else:
+                            styles[idx] = c_green
+                except:
+                    pass # Safety net
+                    
+                return styles
+
+            # Apply the style
+            styled_df = df.style.apply(color_stock, axis=1)
+            
+            # Format numbers to look clean (no decimals)
+            styled_df = styled_df.format("{:.0f}", subset=["FC", "BC", "PE", "EC"])
+
             with self.table_container.container():
                 st.dataframe(
-                    state_data['airports_df'],
+                    styled_df,
                     width="stretch",
                     hide_index=True,
                     column_config={
                         "Code": "Airport",
-                        "Status": st.column_config.TextColumn("Health"),
-                        "FC": st.column_config.ProgressColumn("First", format="%d", min_value=0, max_value=2000),
-                        "BC": st.column_config.ProgressColumn("Business", format="%d", min_value=0, max_value=2000),
-                        "PE": st.column_config.ProgressColumn("Prem Eco", format="%d", min_value=0, max_value=2000),
-                        "EC": st.column_config.ProgressColumn("Economy", format="%d", min_value=0, max_value=2000),
+                        "Status": "Health",
+                        # Hide the capacity columns used for calculation
+                        "Cap_FC": None, "Cap_BC": None, "Cap_PE": None, "Cap_EC": None
                     },
                     height=400
                 )
