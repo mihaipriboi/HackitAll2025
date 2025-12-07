@@ -144,7 +144,9 @@ class Strategy:
             if not info:
                 continue
 
-            origin_inv = self.inventory.get(info.origin, {})
+            # Ensure we are working with the LIVE object from the dictionary
+            origin_inv = self.inventory.setdefault(info.origin, {cls: 0 for cls in CLASS_ORDER})
+            
             aircraft = self.world.aircraft_types.get(info.aircraft_type)
             if not aircraft:
                 # If we don't know the aircraft, skip loading to avoid penalties
@@ -174,41 +176,26 @@ class Strategy:
                     need = dest_future_need.get(cls, 0)
                     dest_remaining_cap = max(0, dest_cap.get(cls, 0) - dest_stock)
                     
-                    # Original logic calculated desired extra:
-                    # desired = min(dest_remaining_cap, pax_now + max(0, need - dest_stock))
-                    
-                    # NEW LOGIC: We calculate desired buffer, but strictly cap at pax_now
-                    # This ensures we never load more than the demand 1h ago.
                     calculated_need = pax_now + max(0, need - dest_stock)
                     
-                    # Apply constraints: 
-                    # 1. Aircraft Capacity
-                    # 2. Hub Stock
-                    # 3. Destination Capacity
-                    # 4. Pax Demand (The new strict cap)
+                    # Logic: We cannot load what we don't have. Strict check.
                     qty = min(cap, hub_stock, dest_remaining_cap, calculated_need, pax_now)
 
                     load_per_class[cls] = qty
-                    origin_inv[cls] = hub_stock - qty
+                    origin_inv[cls] = hub_stock - qty # Update Tracker immediately for next flight in loop
             else:
-                # Outstation: load passengers only (already capped by definition)
-                # Leave a small safety buffer if a return flight exists soon, to avoid negative stock on delays.
-                safety_economy = 12
-                safety_premium = 6
+                # Outstation: load passengers only
                 for cls in CLASS_ORDER:
                     pax = info.passengers.get(cls, 0)
                     cap = aircraft.kit_capacity.get(cls, 0)
                     available = origin_inv.get(cls, 0)
 
-                    reserve = 0
-                    if cls == "ECONOMY":
-                        reserve = safety_economy
-                    elif cls == "PREMIUM_ECONOMY":
-                        reserve = safety_premium
-
-                    qty = min(pax, cap, max(0, available - reserve))
-                    load_per_class[cls] = max(0, qty)
-                    origin_inv[cls] = available - load_per_class[cls]
+                    # STRICT CAP: We can only load 'available' stock. 
+                    # If we load more, we get negative stock penalty.
+                    qty = min(pax, cap, available)
+                    
+                    load_per_class[cls] = qty
+                    origin_inv[cls] = available - qty
 
             # Schedule processed kits to return at destination after processing time
             dest = self.world.airports.get(info.destination)
@@ -218,7 +205,12 @@ class Strategy:
                     if qty <= 0:
                         continue
                     proc_time = dest.processing_time[cls]
-                    ready_day, ready_hour = self._add_hours(info.arrival, proc_time)
+                    
+                    # --- CRITICAL FIX: LOGIC DELAY ---
+                    # Add +1 hour to the availability time. 
+                    # This prevents the race condition where we try to use stock the same hour it arrives.
+                    ready_day, ready_hour = self._add_hours(info.arrival, proc_time + 1)
+                    
                     self.processing_queue.append(
                         ProcessingJob(
                             ready_time=(ready_day, ready_hour),
@@ -270,23 +262,16 @@ class Strategy:
             projected = hub_stock.get(cls, 0) + incoming.get(cls, 0)
             target = int(demand.get(cls, 0) * (1 + buffer)) + cap_extra
 
-            # Hysteresis: if above upper target, skip; if below lower, allow purchase
-            upper = target
-            lower = int(target * self.hysteresis_lower[cls])
-            if projected >= upper:
-                continue
-            if projected >= lower:
+            if projected >= target:
                 continue
 
             shortfall = target - projected
 
-            # Do not place orders that would arrive after game ends
             if current_int + lead >= game_end_int:
                 continue
             if cls == "ECONOMY" and (game_end_int - current_int) < 18:
                 continue
 
-            # Respect airport capacity
             capacity_left = max(0, hub.capacity[cls] - (hub_stock.get(cls, 0) + incoming.get(cls, 0)))
             orders[cls] = min(shortfall, capacity_left)
 
@@ -396,7 +381,11 @@ class Strategy:
             if job.flight_id != flight_id:
                 continue
             proc_time = proc_times.get(job.kit_class, 0)
-            ready_day, ready_hour = self._add_hours(new_arrival, proc_time)
+            
+            # --- CRITICAL FIX HERE TOO ---
+            # Rescheduling must also respect the +1 hour safety logic
+            ready_day, ready_hour = self._add_hours(new_arrival, proc_time + 1)
+            
             job.ready_time = (ready_day, ready_hour)
 
     @staticmethod
