@@ -209,7 +209,7 @@ class Strategy:
                     # --- CRITICAL FIX: LOGIC DELAY ---
                     # Add +1 hour to the availability time. 
                     # This prevents the race condition where we try to use stock the same hour it arrives.
-                    ready_day, ready_hour = self._add_hours(info.arrival, proc_time + 1)
+                    ready_day, ready_hour = self._add_hours(info.arrival, proc_time + 2)
                     
                     self.processing_queue.append(
                         ProcessingJob(
@@ -384,7 +384,7 @@ class Strategy:
             
             # --- CRITICAL FIX HERE TOO ---
             # Rescheduling must also respect the +1 hour safety logic
-            ready_day, ready_hour = self._add_hours(new_arrival, proc_time + 1)
+            ready_day, ready_hour = self._add_hours(new_arrival, proc_time + 2)
             
             job.ready_time = (ready_day, ready_hour)
 
