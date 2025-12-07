@@ -1,0 +1,5 @@
+id;type_code;first_class_seats;business_seats;premium_economy_seats;economy_seats;cost_per_kg_per_km;first_class_kits_capacity;business_kits_capacity;premium_economy_kits_capacity;economy_kits_capacity
+c747f113-8ac8-44f7-8921-cedb2d589e09;JDF494;22;115;96;463;0.13;37;260;194;1027
+921a3105-a4c8-49e2-99c3-718c637e3a62;KMZ870;16;49;33;248;0.11;19;72;88;505
+8f383f1c-0a76-44be-8eca-2307e3673dde;BSN448;15;65;55;262;0.07;28;88;102;540
+97d8a9e7-a3e4-41c7-85b6-9b9f0cee7886;HWH826;33;114;82;447;0.14;54;193;137;757
